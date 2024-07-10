@@ -1,0 +1,314 @@
+---
+title: Homework 1
+author: Gustavo Eugênio de Souza Moraes
+date: 05/06/2024
+output: html_document
+---
+
+# Introdução
+
+Este documento realiza uma análise das ações da NVIDIA, AMD, INTEL e TESLA, incluindo a geração de gráficos, cálculos de estatísticas descritivas e correlações entre os retornos.
+
+#### Observação
+
+* Olá professora, como aluno de computação, gostaria de pedir desculpas caso tenha cometido algum equívoco na aplicação dos conceitos de economia abordados na atividade, mas  estou confiante de que a implementação da linguagem de programação está correta.
+* Informo também que acabei não utilizando o RStudio para implementar as soluções à seguir, utilizei o VSCode com extensões que possibilitam rodar arquivos .rmd em ambiente linux, imagino que esta abordagem não deve no funcionamento deste código no ambiente do RStudio.
+
+## Resolução dos Exercícios propostos
+
+```{r setup_initial, include=FALSE}
+options(warn = -1)
+# install.packages("BatchGetSymbols")
+# install.packages("tidyverse")
+# install.packages("ggthemes")
+# install.packages("gridExtra")
+# install.packages("e1071")
+# install.packages("dplyr")
+# install.packages("rmarkdown")
+library(BatchGetSymbols)
+library(tidyverse)
+library(ggthemes)
+library(gridExtra)
+library(e1071)
+library(dplyr)
+library(rmarkdown)
+
+rm(list = ls())
+```
+
+### Exercício 1
+
+* Você deve escolher 4 (quatro) variáveis disponíveis no Yahoo Finance e verificar os
+fatos estilizados de séries temporais financeiras, seguindo aproximadamente o que
+foi mostrado na aula.
+
+#### Função auxiliar para extração dos dados de retornos diários
+
+```{r daily_returns_function}
+daily_returns_from <- function(df) {
+  daily_returns <- df %>% select(ref.date, ticker, ret.closing.prices)
+  return(daily_returns)
+}
+```
+
+#### Gráfico Fechamento
+
+```{r ex1_price}
+plot_price <- function(df) {
+  name <- df$ticker
+  plot <- ggplot(df, aes(ref.date, price.close)) +
+    geom_line(color = "green") +
+    labs(
+      x = "",
+      y = "Preço de Fechamento",
+      title = paste("Cotação diária de", name),
+      subtitle = "De 03/06/2004 a 03/06/2024",
+      caption = "Fonte: Yahoo"
+    ) +
+    theme_economist()
+
+  return(plot)
+}
+```
+
+#### Gráfico Retornos diários
+
+```{r ex1_daily_returns}
+plot_daily_returns <- function(df) {
+  name <- df$ticker
+  plot_data <- daily_returns_from(df)
+
+  plot <- ggplot(plot_data) +
+    geom_line(aes(x = ref.date, y = ret.closing.prices), color = "red") +
+    labs(
+      x = "",
+      y = "Retornos",
+      title = paste("Retornos de", name),
+      subtitle = "De 03/06/2004 a 03/06/2024",
+      caption = "Fonte: Yahoo"
+    ) +
+    theme_economist()
+
+  return(plot)
+}
+```
+
+#### Gráfico volatilidade
+
+```{r ex1_volatility}
+plot_volatility <- function(df) {
+  name <- df$ticker
+  plot_data <- daily_returns_from(df)
+
+  plot <- ggplot(plot_data) +
+    geom_line(
+      aes(
+        x = ref.date,
+        y = abs(ret.closing.prices)
+      ),
+      color = "blue"
+    ) +
+    labs(
+      x = "",
+      y = "Retornos absolutos",
+      title = paste("Retornos absolutos de", name),
+      subtitle = "De 03/06/2004 a 03/06/2024",
+      caption = "Fonte: Yahoo"
+    ) +
+    theme_economist()
+
+  return(plot)
+}
+```
+
+#### Gráfico QQ
+
+```{r ex1_qq}
+plot_qq <- function(df) {
+  name <- df$ticker
+  plot_data <- daily_returns_from(df)
+
+  plot <- ggplot(
+    plot_data,
+    aes(sample = ret.closing.prices)
+  ) +
+    stat_qq() +
+    stat_qq_line() +
+    labs(
+      x = "Teórico",
+      y = "Amostra",
+      title = "QQplot",
+      subtitle = paste("Retornos diários de", name),
+      caption = "Fonte: Elaborado a partir de dados do Yahoo"
+    ) +
+    theme_economist()
+
+  return(plot)
+}
+```
+
+#### Histograma
+
+```{r ex1_histogram}
+plot_histogram <- function(df) {
+  name <- df$ticker
+  plot_data <- daily_returns_from(df)
+
+  plot <- ggplot(plot_data) +
+    geom_histogram(
+      aes(
+        x = ret.closing.prices,
+        y = after_stat(density)
+      ),
+      color = "white",
+      fill = "dark grey",
+      linetype = "solid",
+      alpha = 0.8,
+      binwidth = 0.5
+    ) +
+    geom_density(
+      aes(
+        x = ret.closing.prices,
+        y = after_stat(density)
+      ),
+      color = "black"
+    ) +
+    labs(
+      y = "Densidade",
+      title = "Histograma",
+      subtitle = paste("Retornos diários de", name),
+      caption = "Fonte: Elaborado a partir de dados do Yahoo"
+    ) +
+    theme_economist()
+
+  return(plot)
+}
+```
+
+#### Unindo todos os gráficos
+
+```{r merge_graphs}
+generate_all_plots <- function(df) {
+  price <- plot_price(df)
+  daily_returns <- plot_daily_returns(df)
+  volatility <- plot_volatility(df)
+  qq <- plot_qq(df)
+  histogram <- plot_histogram(df)
+
+  all_plots <- grid.arrange(
+    price, daily_returns, volatility, qq, histogram,
+    ncol = 2, layout_matrix = cbind(c(1, 3, 5), c(2, 4, 5))
+  )
+}
+```
+
+### Exercício 2
+
+#### Descrição de características do fechamento diário
+
+```{r describe}
+describe_daily_returns <- function(df) {
+  daily_returns <- daily_returns_from(df)
+
+  stats <- daily_returns %>%
+    summarise(across(where(is.numeric), c(
+      mean = ~ mean(., na.rm = TRUE),
+      sd = ~ sd(., na.rm = TRUE),
+      var = ~ var(., na.rm = TRUE),
+      skewness = ~ skewness(., na.rm = TRUE),
+      kurtosis = ~ kurtosis(., na.rm = TRUE)
+    ))) %>%
+    setNames(c("media", "desvio padrao", "variancia", "assimetria", "curtose"))
+
+  return(stats)
+}
+```
+
+### Exercício 3
+
+#### Mapa de dispersão
+
+```{r scatterplot}
+plot_scatter <- function(df1, df2) {
+  ticker1 <- df1$ticker
+  ticker2 <- df2$ticker
+
+  combined_df <- full_join(df1, df2, by = "ref.date")
+
+  correlation <- cor(
+    combined_df$ret.closing.prices.x,
+    combined_df$ret.closing.prices.y,
+    use = "complete.obs"
+  )
+
+  scatterplot <- ggplot(
+    combined_df,
+    aes(x = ret.closing.prices.x, y = ret.closing.prices.y)
+  ) +
+    geom_point() +
+    labs(
+      title = paste("Dispersão de retornos:", ticker1, "vs", ticker2),
+      subtitle = paste("Correlação:", round(correlation, 2)),
+      x = paste("Retorno de", ticker1),
+      y = paste("Retorno de", ticker2)
+    ) +
+    theme_economist() +
+    theme(plot.title = element_text(size = 14))
+
+  return(scatterplot)
+}
+```
+
+### Exercicio 4
+
+Depois de um bom tempo tentando, acabei não entendendo direito quais (e como) informações deveriam ser apresentadas no heatmap e preferi pular esta execução.
+
+## Resultados
+
+### Tickers selecionados = { NVIDIA, AMD, INTEL, TESLA }
+
+Nesta seção utilzaremos a biblioteca BatchGetSymbols para extrair as informações necessárias para a análise para os tickers desejados.
+As informações extraidas são diárias, no intervalo de tempo de junho de 2099 até junho de 2024. 
+
+#### Extraindo os dados com BatchGetSymbols
+
+```{r extract_info}
+tickers <- c("NVDA", "AMD", "INTC", "TSLA")
+
+assets <- BatchGetSymbols(
+  tickers,
+  first.date = "2009-06-03",
+  last.date = "2024-06-03",
+  type.return = "log",
+  freq.data = "daily"
+)$df.tickers
+```
+
+
+#### Apresentando os resultados
+
+Iterando por cada ticker e aplicando a resolução de cada exercicio para o mesmo.
+
+```{r output_data, echo=FALSE, out.width="100%", fig.height=8, fig.width=10}
+for (ticker_key in tickers) {
+  print(sprintf("Resultados para %s", ticker_key))
+
+  asset <- assets %>% filter(ticker == ticker_key)
+
+  # EX 1
+  generate_all_plots(asset)
+
+  # EX 2
+  stats <- describe_daily_returns(asset)
+  print(sprintf("Descrição para valores de retornos diários de %s", ticker_key))
+  print(stats)
+
+  # EX 3
+  scatter_plots <- list()
+  for (ticker_key2 in tickers) {
+    compare_to <- assets %>% filter(ticker == ticker_key2)
+    scatter_plots[[ticker_key2]] <- plot_scatter(compare_to, asset)
+  }
+  grid.arrange(grobs = scatter_plots, ncol = 2)
+}
+```
